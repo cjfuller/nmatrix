@@ -57,6 +57,21 @@
  * Macros
  */
 
+#undef ALLOC
+#undef ALLOCA_N
+#undef ALLOC_N
+#undef xfree
+
+#define ALLOC(t) \
+  (t*) malloc(sizeof(t))
+#define ALLOC_N(t,n) \
+  (t*) malloc(n*sizeof(t))
+#define ALLOCA_N(t,n) \
+  (t*) malloc(n*sizeof(t))
+#define xfree(mem) \
+  free(mem)
+
+
 #define RUBY_ZERO INT2FIX(0)
 
 #ifndef SIZEOF_INT

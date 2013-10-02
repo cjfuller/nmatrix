@@ -43,9 +43,29 @@
 #include "common.h"
 #include "dense.h"
 
+#undef ALLOC
+#undef ALLOCA_N
+#undef ALLOC_N
+#undef xfree
+
+#define ALLOC(t) \
+  (t*) malloc(sizeof(t))
+#define ALLOC_N(t,n) \
+  (t*) malloc(n*sizeof(t))
+#define ALLOCA_N(t,n) \
+  (t*) alloca(n*sizeof(t))
+#define xfree(mem) \
+  free(mem)
+
 /*
  * Macros
  */
+
+ #define VOLATILE_ELEMS_IF_RUBYOBJ(storage) \
+      volatile VALUE* els_##storage = NULL; \
+      if (storage->dtype == nm::RUBYOBJ) { \
+        els_##storage = reinterpret_cast<VALUE*>(storage->elements); \
+      }
 
 /*
  * Global Variables
@@ -124,10 +144,16 @@ namespace nm { namespace dense_storage {
    */
   template <typename D>
   void set(VALUE left, SLICE* slice, VALUE right) {
-    DENSE_STORAGE* s = NM_STORAGE_DENSE(left);
+    /*
+     * Since we don't know where left and right are coming from
+     * volatile here ensures that they aren't GC'd during ALLOC_N below
+     */
+    volatile VALUE vleft = left;
+    volatile VALUE vright = right;
+    DENSE_STORAGE* s = NM_STORAGE_DENSE(vleft);
 
     std::pair<NMATRIX*,bool> nm_and_free =
-      interpret_arg_as_dense_nmatrix(right, NM_DTYPE(left));
+      interpret_arg_as_dense_nmatrix(vright, NM_DTYPE(vleft));
 
     // Map the data onto D* v.
     D*     v;
@@ -307,9 +333,15 @@ void nm_dense_storage_mark(STORAGE* storage_base) {
  * map_pair iterator for dense matrices (for element-wise operations)
  */
 VALUE nm_dense_map_pair(VALUE self, VALUE right) {
-  DENSE_STORAGE *s = NM_STORAGE_DENSE(self),
-                *t = NM_STORAGE_DENSE(right);
+  /*
+   * Since we don't know where self and right are coming from,
+   * volatile here ensures they aren't GC'd during the ALLOC_N below.
+   */
+  volatile VALUE vself = self;
+  volatile VALUE vright = right;
 
+  DENSE_STORAGE *s = NM_STORAGE_DENSE(vself),
+                *t = NM_STORAGE_DENSE(vright);
   RETURN_SIZED_ENUMERATOR(self, 0, 0, nm_enumerator_length);
 
   size_t* coords = ALLOCA_N(size_t, s->dim);
@@ -322,9 +354,10 @@ VALUE nm_dense_map_pair(VALUE self, VALUE right) {
 
   DENSE_STORAGE* result = nm_dense_storage_create(nm::RUBYOBJ, shape_copy, s->dim, NULL, 0);
   
-  /* Using volatile here ensures that the pointer remains on the stack no matter what
-   * so that the ruby GC can find out that the elements array is in use if GC runs 
-   * during the yield statement below.
+  /* 
+   * Using volatile here ensures that the pointer remains on the stack no 
+   * matter what so that the ruby GC can find out that the elements array is 
+   * in use if GC runs during the yield statement below.
    */
   volatile VALUE* result_elem = reinterpret_cast<VALUE*>(result->elements);
 
@@ -348,9 +381,13 @@ VALUE nm_dense_map_pair(VALUE self, VALUE right) {
  * map enumerator for dense matrices.
  */
 VALUE nm_dense_map(VALUE self) {
+  /*
+   * Since we don't know where self is coming from, volatile here ensures that
+   * it isn't GC'd during ALLOCA_N or yield below.
+   */
   volatile VALUE vself = self;
-  DENSE_STORAGE *s = NM_STORAGE_DENSE(vself);
 
+  DENSE_STORAGE *s = NM_STORAGE_DENSE(vself);
   RETURN_SIZED_ENUMERATOR(vself, 0, 0, nm_enumerator_length);
 
   size_t* coords = ALLOCA_N(size_t, s->dim);
@@ -363,9 +400,10 @@ VALUE nm_dense_map(VALUE self) {
 
   DENSE_STORAGE* result = nm_dense_storage_create(nm::RUBYOBJ, shape_copy, s->dim, NULL, 0);
 
-  /* Using volatile here ensures that the pointer remains on the stack no matter what
-   * so that the ruby GC can find out that the elements array is in use if GC runs 
-   * during the yield statement below.
+  /* 
+   * Using volatile here ensures that the pointer remains on the stack no 
+   * matter what so that the ruby GC can find out that the elements array is 
+   * in use if GC runs during the yield statement below.
    */
   volatile VALUE* result_elem = reinterpret_cast<VALUE*>(result->elements);
 
@@ -386,6 +424,10 @@ VALUE nm_dense_map(VALUE self) {
  * each_with_indices iterator for dense matrices.
  */
 VALUE nm_dense_each_with_indices(VALUE nmatrix) {
+  /*
+   * Since we don't know where nmatrix is coming from, volatile here ensures
+   * that it isn't GC'd during the ALLOC_N or yield below.
+   */
   volatile VALUE nm = nmatrix;
 
   DENSE_STORAGE* s = NM_STORAGE_DENSE(nm);
@@ -433,7 +475,12 @@ VALUE nm_dense_each_with_indices(VALUE nmatrix) {
  * containing other types of data.
  */
 VALUE nm_dense_each(VALUE nmatrix) {
-  volatile VALUE nm = nmatrix; // Not sure this actually does anything.
+  /*
+   * Since we don't know where nmatrix is coming from, volatile here ensures
+   * that it isn't GC'd during the ALLOC_N or yield below.
+   */
+  volatile VALUE nm = nmatrix;
+
   DENSE_STORAGE* s = NM_STORAGE_DENSE(nm);
 
   RETURN_SIZED_ENUMERATOR(nm, 0, 0, nm_enumerator_length);
@@ -493,6 +540,11 @@ void* nm_dense_storage_get(const STORAGE* storage, SLICE* slice) {
   if (slice->single)
     return (char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype];
   else {
+    //TODO: determine whether its necessary to check whether object dtype 
+    // and volatile the storage->elements array here.
+    // This should only be necessary if storage could have come from
+    // a source the GC doesn't know about.
+    VOLATILE_ELEMS_IF_RUBYOBJ(s)
     size_t *shape      = ALLOC_N(size_t, s->dim);
     for (size_t i = 0; i < s->dim; ++i) {
       shape[i]  = slice->lengths[i];
@@ -523,6 +575,11 @@ void* nm_dense_storage_ref(const STORAGE* storage, SLICE* slice) {
     return (char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype];
 
   else {
+    //TODO: determine whether its necessary to check whether object dtype 
+    // and volatile the storage->elements array here.
+    // This should only be necessary if storage could have come from
+    // a source the GC doesn't know about.
+    VOLATILE_ELEMS_IF_RUBYOBJ(s)
     DENSE_STORAGE* ns = ALLOC( DENSE_STORAGE );
     ns->dim        = s->dim;
     ns->dtype      = s->dtype;
@@ -694,6 +751,11 @@ STORAGE* nm_dense_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype, v
  * Copy dense storage without a change in dtype.
  */
 DENSE_STORAGE* nm_dense_storage_copy(const DENSE_STORAGE* rhs) {
+  //TODO: determine whether its necessary to check whether object dtype 
+  // and volatile the rhs->elements array here.
+  // This should only be necessary if rhs could have come from
+  // a source the GC doesn't know about.
+  VOLATILE_ELEMS_IF_RUBYOBJ(rhs)
   size_t  count = 0;
   size_t *shape  = ALLOC_N(size_t, rhs->dim);
 
@@ -705,13 +767,12 @@ DENSE_STORAGE* nm_dense_storage_copy(const DENSE_STORAGE* rhs) {
   DENSE_STORAGE* lhs = nm_dense_storage_create(rhs->dtype, shape, rhs->dim, NULL, 0);
   count = nm_storage_count_max_elements(lhs);
 
-
 	// Ensure that allocation worked before copying.
   if (lhs && count) {
     if (rhs == rhs->src) // not a reference
       memcpy(lhs->elements, rhs->elements, DTYPE_SIZES[rhs->dtype] * count);
     else { // slice whole matrix
-      size_t *offset = ALLOC_N(size_t, rhs->dim);
+      size_t *offset = ALLOCA_N(size_t, rhs->dim);
       memset(offset, 0, sizeof(size_t) * rhs->dim);
 
       slice_copy(lhs,
@@ -734,7 +795,12 @@ DENSE_STORAGE* nm_dense_storage_copy(const DENSE_STORAGE* rhs) {
  */
 STORAGE* nm_dense_storage_copy_transposed(const STORAGE* rhs_base) {
   DENSE_STORAGE* rhs = (DENSE_STORAGE*)rhs_base;
+  VOLATILE_ELEMS_IF_RUBYOBJ(rhs)
 
+  //TODO: determine whether its necessary to check whether object dtype 
+  // and volatile the rhs->elements array here.
+  // This should only be necessary if rhs could have come from
+  // a source the GC doesn't know about.
   size_t *shape = ALLOC_N(size_t, rhs->dim);
 
   // swap shape and offset
@@ -797,9 +863,15 @@ namespace dense_storage {
 
 template<typename LDType, typename RDType>
 void ref_slice_copy_transposed(const DENSE_STORAGE* rhs, DENSE_STORAGE* lhs) {
-
+  //TODO: determine whether its necessary to check whether object dtype 
+  // and volatile the rhs,lhs->elements array here.
+  // This should only be necessary if rhs,lhs could have come from
+  // a source the GC doesn't know about.
   LDType* lhs_els = reinterpret_cast<LDType*>(lhs->elements);
   RDType* rhs_els = reinterpret_cast<RDType*>(rhs->elements);
+  VOLATILE_ELEMS_IF_RUBYOBJ(lhs)
+  VOLATILE_ELEMS_IF_RUBYOBJ(rhs)
+
 
   size_t count = nm_storage_count_max_elements(lhs);
   size_t* temp_coords = ALLOCA_N(size_t, lhs->dim);
@@ -817,7 +889,11 @@ void ref_slice_copy_transposed(const DENSE_STORAGE* rhs, DENSE_STORAGE* lhs) {
 template <typename LDType, typename RDType>
 DENSE_STORAGE* cast_copy(const DENSE_STORAGE* rhs, dtype_t new_dtype) {
   size_t  count = nm_storage_count_max_elements(rhs);
-
+  //TODO: determine whether its necessary to check whether object dtype 
+  // and volatile the rhs->elements array here.
+  // This should only be necessary if rhs could have come from
+  // a source the GC doesn't know about.
+  VOLATILE_ELEMS_IF_RUBYOBJ(rhs)
   size_t *shape = ALLOC_N(size_t, rhs->dim);
   memcpy(shape, rhs->shape, sizeof(size_t) * rhs->dim);
 
@@ -932,6 +1008,12 @@ static DENSE_STORAGE* matrix_multiply(const STORAGE_PAIR& casted_storage, size_t
   DENSE_STORAGE *left  = (DENSE_STORAGE*)(casted_storage.left),
                 *right = (DENSE_STORAGE*)(casted_storage.right);
 
+  //TODO: determine whether its necessary to check whether object dtype 
+  // and volatile the left,right->elements array here.
+  // This should only be necessary if casted_storage could have come from
+  // a source the GC doesn't know about.
+  VOLATILE_ELEMS_IF_RUBYOBJ(left)
+  VOLATILE_ELEMS_IF_RUBYOBJ(right)
   // Create result storage.
   DENSE_STORAGE* result = nm_dense_storage_create(left->dtype, resulting_shape, 2, NULL, 0);
 
