@@ -34,6 +34,21 @@
 
 #include <ruby.h>
 
+#undef ALLOC
+#undef ALLOCA_N
+#undef ALLOC_N
+#undef xfree
+
+#define ALLOC(t) \
+  (t*) malloc(sizeof(t))
+#define ALLOC_N(t,n) \
+  (t*) malloc(n*sizeof(t))
+#define ALLOCA_N(t,n) \
+  (t*) malloc(n*sizeof(t))
+#define xfree(mem) \
+  free(mem)
+
+
 /*
  * Data
  */
