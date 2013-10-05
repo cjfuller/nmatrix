@@ -28,8 +28,8 @@
 #include <ruby.h>
 
 // (see nm_memory.h for explanation)
-volatile VALUE no_op(volatile VALUE* volatile in) {
-  return (*in) || Qnil;
+volatile VALUE* no_op(volatile VALUE* volatile in) {
+  return in;
 }
 
 volatile VALUE no_op(volatile VALUE in) {
