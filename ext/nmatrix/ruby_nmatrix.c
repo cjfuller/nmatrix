@@ -487,6 +487,7 @@ void nm_unregister_values(VALUE* values, size_t n) {
  * :rational64, :rational128, or :object (the last is a Ruby object).
  */
 static VALUE nm_dtype(VALUE self) {
+  NM_VOLATILE(self);
   ID dtype = rb_intern(DTYPE_NAMES[NM_DTYPE(self)]);
   return ID2SYM(dtype);
 }
@@ -501,6 +502,9 @@ static VALUE nm_dtype(VALUE self) {
  * This is a singleton method on NMatrix, e.g., NMatrix.upcast(:int32, :int64)
  */
 static VALUE nm_upcast(VALUE self, VALUE t1, VALUE t2) {
+  NM_VOLATILE(self);
+  NM_VOLATILE(t1);
+  NM_VOLATILE(t2);
 
   nm::dtype_t d1    = nm_dtype_from_rbsymbol(t1),
               d2    = nm_dtype_from_rbsymbol(t2);
@@ -535,9 +539,7 @@ static VALUE nm_default_value(VALUE self) {
  *
  * Iterate over all entries of any matrix in standard storage order (as with #each), and include the indices.
  */
-static VALUE nm_each_with_indices(VALUE nmatrix) {
-  volatile VALUE nm = nmatrix;
-
+static VALUE nm_each_with_indices(VALUE nm) {
   switch(NM_STYPE(nm)) {
   case nm::YALE_STORE:
     return nm_yale_each_with_indices(nm);
@@ -548,6 +550,7 @@ static VALUE nm_each_with_indices(VALUE nmatrix) {
   default:
     rb_raise(nm_eDataTypeError, "Not a proper storage type");
   }
+  return Qnil; //never happens due to earlier return or raise
 }
 
 /*
@@ -558,9 +561,7 @@ static VALUE nm_each_with_indices(VALUE nmatrix) {
  * entries; for list, this iterates over non-default entries. Yields dim+1 values for each entry:
  * i, j, ..., and the entry itself.
  */
-static VALUE nm_each_stored_with_indices(VALUE nmatrix) {
-  volatile VALUE nm = nmatrix;
-
+static VALUE nm_each_stored_with_indices(VALUE nm) {
   switch(NM_STYPE(nm)) {
   case nm::YALE_STORE:
     return nm_yale_each_stored_with_indices(nm);
@@ -571,6 +572,7 @@ static VALUE nm_each_stored_with_indices(VALUE nmatrix) {
   default:
     rb_raise(nm_eDataTypeError, "Not a proper storage type");
   }
+  return Qnil; //never happens due to earlier return or raise
 }
 
 
@@ -582,9 +584,7 @@ static VALUE nm_each_stored_with_indices(VALUE nmatrix) {
  * entries; for list, this iterates over non-default entries. Yields dim+1 values for each entry:
  * i, j, ..., and the entry itself.
  */
-static VALUE nm_map_stored(VALUE nmatrix) {
-  volatile VALUE nm = nmatrix;
-
+static VALUE nm_map_stored(VALUE nm) {
   switch(NM_STYPE(nm)) {
   case nm::YALE_STORE:
     return nm_yale_map_stored(nm);
@@ -595,6 +595,7 @@ static VALUE nm_map_stored(VALUE nmatrix) {
   default:
     rb_raise(nm_eDataTypeError, "Not a proper storage type");
   }
+  return Qnil; //never happens due to earlier return or raise
 }
 
 /*
@@ -604,9 +605,7 @@ static VALUE nm_map_stored(VALUE nmatrix) {
  * Very similar to #each_stored_with_indices. The key difference is that it enforces matrix ordering rather
  * than storage ordering, which only matters if your matrix is Yale.
  */
-static VALUE nm_each_ordered_stored_with_indices(VALUE nmatrix) {
-  volatile VALUE nm = nmatrix;
-
+static VALUE nm_each_ordered_stored_with_indices(VALUE nm) {
   switch(NM_STYPE(nm)) {
   case nm::YALE_STORE:
     return nm_yale_each_ordered_stored_with_indices(nm);
@@ -617,6 +616,7 @@ static VALUE nm_each_ordered_stored_with_indices(VALUE nmatrix) {
   default:
     rb_raise(nm_eDataTypeError, "Not a proper storage type");
   }
+  return Qnil; //never happens due to earlier return or raise
 }
 
 
@@ -629,6 +629,9 @@ static VALUE nm_each_ordered_stored_with_indices(VALUE nmatrix) {
  * This method will raise an exception if dimensions do not match.
  */
 static VALUE nm_eqeq(VALUE left, VALUE right) {
+  NM_VOLATILE(left);
+  NM_VOLATILE(right);
+
   NMATRIX *l, *r;
 
   CheckNMatrixType(left);
@@ -696,6 +699,9 @@ DEF_NONCOM_ELEMENTWISE_RUBY_ACCESSOR(LDEXP, ldexp)
 DEF_NONCOM_ELEMENTWISE_RUBY_ACCESSOR(HYPOT, hypot)
 
 static VALUE nm_unary_log(int argc, VALUE* argv, VALUE self) {
+  NM_VOLATILE(self);
+  NM_VOLATILE_P(argv);
+
   const double default_log_base = exp(1.0);
   NMATRIX* left;
   UnwrapNMatrix(self, left);
@@ -717,10 +723,6 @@ static VALUE nm_unary_log(int argc, VALUE* argv, VALUE self) {
   }
   return rb_funcall(self, rb_intern(sym.c_str()), 1, nm::RubyObject(default_log_base).rval);
 }
-
-//DEF_ELEMENTWISE_RUBY_ACCESSOR(ATAN2, atan2)
-//DEF_ELEMENTWISE_RUBY_ACCESSOR(LDEXP, ldexp)
-//DEF_ELEMENTWISE_RUBY_ACCESSOR(HYPOT, hypot)
 
 /*
  * call-seq:
@@ -747,6 +749,8 @@ static VALUE nm_hermitian(VALUE self) {
  * Bang should imply that no copy is being made, even temporarily.
  */
 static VALUE nm_complex_conjugate_bang(VALUE self) {
+  NM_VOLATILE(self);
+
   NMATRIX* m;
   void* elem;
   size_t size, p;
@@ -792,6 +796,8 @@ static VALUE nm_complex_conjugate_bang(VALUE self) {
  * need to worry about deleting it.
  */
 NMATRIX* nm_create(nm::stype_t stype, STORAGE* storage) {
+  NM_VOLATILE_STORAGE(stype, storage);
+
   NMATRIX* mat = NM_ALLOC(NMATRIX);
 
   mat->stype   = stype;
@@ -804,6 +810,8 @@ NMATRIX* nm_create(nm::stype_t stype, STORAGE* storage) {
  * @see nm_init
  */
 static VALUE nm_init_new_version(int argc, VALUE* argv, VALUE self) {
+  NM_VOLATILE(self);
+  NM_VOLATILE_P(argv);
   volatile VALUE shape_ary, initial_ary, hash;
   //VALUE shape_ary, default_val, capacity, initial_ary, dtype_sym, stype_sym;
   // Mandatory args: shape, dtype, stype
@@ -835,7 +843,7 @@ static VALUE nm_init_new_version(int argc, VALUE* argv, VALUE self) {
 
   nm::stype_t stype = nm::DENSE_STORE;
   nm::dtype_t dtype = nm::RUBYOBJ;
-  VALUE dtype_sym = Qnil, stype_sym = Qnil, default_val_num = Qnil, capacity_num = Qnil;
+  volatile VALUE dtype_sym = Qnil, stype_sym = Qnil, default_val_num = Qnil, capacity_num = Qnil;
   size_t capacity = 0;
   if (!NIL_P(hash)) {
     dtype_sym       = rb_hash_aref(hash, ID2SYM(nm_rb_dtype));
@@ -916,6 +924,7 @@ static VALUE nm_init_new_version(int argc, VALUE* argv, VALUE self) {
   		nm_yale_storage_init((YALE_STORAGE*)(nmatrix->storage), init);
   		break;
   }
+  NM_VOLATILE_NMATRIX(nmatrix);
 
   // If we're not creating a dense, and an initial array was provided, use that and multi-slice-set
   // to set the contents of the matrix right now.
@@ -930,7 +939,7 @@ static VALUE nm_init_new_version(int argc, VALUE* argv, VALUE self) {
     SLICE* slice = get_slice(dim, dim, slice_argv, shape);
     // Create a temporary dense matrix and use it to do a slice assignment on self.
     NMATRIX* tmp          = nm_create(nm::DENSE_STORE, (STORAGE*)nm_dense_storage_create(dtype, tmp_shape, dim, v, v_size));
-    volatile VALUE rb_tmp = Data_Wrap_Struct(CLASS_OF(self), nm_mark, nm_delete, tmp);
+    volatile VALUE rb_tmp = Data_Wrap_Struct(CLASS_OF(self), nm_mark, nm_delete, tmp); //FIXME: is this volatile necessary? Will ruby know about this regardless after the Data_Wrap_Struct call?
     if (stype == nm::YALE_STORE)  nm_yale_storage_set(self, slice, rb_tmp);
     else                          nm_list_storage_set(self, slice, rb_tmp);
 
@@ -983,6 +992,9 @@ static VALUE nm_init_new_version(int argc, VALUE* argv, VALUE self) {
  * shortcuts.rb.
  */
 static VALUE nm_init(int argc, VALUE* argv, VALUE nm) {
+
+  NM_VOLATILE(nm);
+  NM_VOLATILE_P(argv);
 
   if (argc <= 3) { // Call the new constructor unless all four arguments are given (or the 7-arg version is given)
   	return nm_init_new_version(argc, argv, nm);
@@ -1087,6 +1099,7 @@ static VALUE nm_init(int argc, VALUE* argv, VALUE nm) {
  * Helper for nm_cast which uses the C types instead of the Ruby objects. Called by nm_cast.
  */
 NMATRIX* nm_cast_with_ctype_args(NMATRIX* self, nm::stype_t new_stype, nm::dtype_t new_dtype, void* init_ptr) {
+  NM_VOLATILE_NMATRIX(self);
   NMATRIX* lhs = NM_ALLOC(NMATRIX);
   lhs->stype   = new_stype;
 
@@ -1106,26 +1119,28 @@ NMATRIX* nm_cast_with_ctype_args(NMATRIX* self, nm::stype_t new_stype, nm::dtype
  * Copy constructor for changing dtypes and stypes.
  */
 VALUE nm_cast(VALUE self, VALUE new_stype_symbol, VALUE new_dtype_symbol, VALUE init) {
-  volatile VALUE vself = self;
+  NM_VOLATILE(self);
+  NM_VOLATILE(init);
 
   nm::dtype_t new_dtype = nm_dtype_from_rbsymbol(new_dtype_symbol);
   nm::stype_t new_stype = nm_stype_from_rbsymbol(new_stype_symbol);
 
-  CheckNMatrixType(vself);
+  CheckNMatrixType(self);
   NMATRIX *rhs;
 
-  UnwrapNMatrix( vself, rhs );
+  UnwrapNMatrix( self, rhs );
 
   void* init_ptr = NM_ALLOCA_N(char, DTYPE_SIZES[new_dtype]);
   rubyval_to_cval(init, new_dtype, init_ptr);
 
-  return Data_Wrap_Struct(CLASS_OF(vself), nm_mark, nm_delete, nm_cast_with_ctype_args(rhs, new_stype, new_dtype, init_ptr));
+  return Data_Wrap_Struct(CLASS_OF(self), nm_mark, nm_delete, nm_cast_with_ctype_args(rhs, new_stype, new_dtype, init_ptr));
 }
 
 /*
  * Copy constructor for transposing.
  */
 static VALUE nm_init_transposed(VALUE self) {
+  NM_VOLATILE(self);
   static STORAGE* (*storage_copy_transposed[nm::NUM_STYPES])(const STORAGE* rhs_base) = {
     nm_dense_storage_copy_transposed,
     nm_list_storage_copy_transposed,
@@ -1143,6 +1158,9 @@ static VALUE nm_init_transposed(VALUE self) {
  * Copy constructor for no change of dtype or stype (used for #initialize_copy hook).
  */
 static VALUE nm_init_copy(VALUE copy, VALUE original) {
+  NM_VOLATILE(copy);
+  NM_VOLATILE(original);
+
   NMATRIX *lhs, *rhs;
 
   CheckNMatrixType(original);
@@ -1291,7 +1309,8 @@ static VALUE rb_get_errno_exc(const char* which) {
  */
 static VALUE nm_write(int argc, VALUE* argv, VALUE self) {
   using std::ofstream;
-
+  NM_VOLATILE(self);
+  NM_VOLATILE_P(argv);
 
   if (argc < 1 || argc > 2) {
     rb_raise(rb_eArgError, "Expected one or two arguments");
@@ -1439,7 +1458,7 @@ static VALUE nm_read(int argc, VALUE* argv, VALUE self) {
   STORAGE* s;
   if (stype == nm::DENSE_STORE) {
     s = nm_dense_storage_create(dtype, shape, dim, NULL, 0);
-
+    NM_VOLATILE_STORAGE(stype, s);
     read_padded_dense_elements(f, reinterpret_cast<DENSE_STORAGE*>(s), symm, dtype);
 
   } else if (stype == nm::YALE_STORE) {
@@ -1450,12 +1469,12 @@ static VALUE nm_read(int argc, VALUE* argv, VALUE self) {
     f.read(reinterpret_cast<char*>(&length),   sizeof(uint32_t));
 
     s = nm_yale_storage_create(dtype, shape, dim, length); // set length as init capacity
-
+    NM_VOLATILE_STORAGE(stype, s);
     read_padded_yale_elements(f, reinterpret_cast<YALE_STORAGE*>(s), length, symm, dtype);
   } else {
     rb_raise(nm_eStorageTypeError, "please convert to yale or dense before saving");
   }
-
+  NM_VOLATILE_STORAGE(stype, s); //previous volatile has gone out of scope
   NMATRIX* nm = nm_create(stype, s);
 
   // Return the appropriate matrix object (Ruby VALUE)
@@ -1553,6 +1572,8 @@ static VALUE nm_mref(int argc, VALUE* argv, VALUE self) {
  *     n[3,3] = n[2,3] = 5.0
  */
 static VALUE nm_mset(int argc, VALUE* argv, VALUE self) {
+  NM_VOLATILE(self);
+  NM_VOLATILE_P(argv);
   size_t dim = NM_DIM(self); // last arg is the value
 
   if ((size_t)(argc) > NM_DIM(self)+1) {
@@ -1583,6 +1604,8 @@ static VALUE nm_mset(int argc, VALUE* argv, VALUE self) {
  * The two matrices must be of the same stype (for now). If dtype differs, an upcast will occur.
  */
 static VALUE nm_multiply(VALUE left_v, VALUE right_v) {
+  NM_VOLATILE(left_v);
+  NM_VOLATILE(right_v);
   NMATRIX *left, *right;
 
   UnwrapNMatrix( left_v, left );
@@ -1633,6 +1656,7 @@ static VALUE nm_dim(VALUE self) {
  * Get the shape (dimensions) of a matrix.
  */
 static VALUE nm_shape(VALUE self) {
+  NM_VOLATILE(self);
   STORAGE* s   = NM_STORAGE(self);
 
   // Copy elements into a VALUE array and then use those to create a Ruby array with rb_ary_new4.
@@ -1651,6 +1675,7 @@ static VALUE nm_shape(VALUE self) {
  * Get the offset (slice position) of a matrix. Typically all zeros, unless you have a reference slice.
  */
 static VALUE nm_offset(VALUE self) {
+  NM_VOLATILE(self);
   STORAGE* s   = NM_STORAGE(self);
 
   // Copy elements into a VALUE array and then use those to create a Ruby array with rb_ary_new4.
@@ -1669,7 +1694,7 @@ static VALUE nm_offset(VALUE self) {
  * Get the shape of a slice's parent.
  */
 static VALUE nm_supershape(VALUE self) {
-
+  NM_VOLATILE(self);
   STORAGE* s   = NM_STORAGE(self);
   if (s->src == s) return nm_shape(self); // easy case (not a slice)
   else s = s->src;
@@ -1688,6 +1713,7 @@ static VALUE nm_supershape(VALUE self) {
  * Get the storage type (stype) of a matrix, e.g., :yale, :dense, or :list.
  */
 static VALUE nm_stype(VALUE self) {
+  NM_VOLATILE(self);
   ID stype = rb_intern(STYPE_NAMES[NM_STYPE(self)]);
   return ID2SYM(stype);
 }
@@ -1730,6 +1756,8 @@ static VALUE nm_effective_dim(VALUE self) {
  * Get a slice of an NMatrix.
  */
 static VALUE nm_xslice(int argc, VALUE* argv, void* (*slice_func)(const STORAGE*, SLICE*), void (*delete_func)(NMATRIX*), VALUE self) {
+  NM_VOLATILE(self);
+  NM_VOLATILE_P(argv);
   VALUE result = Qnil;
   STORAGE* s = NM_STORAGE(self);
 
@@ -1768,6 +1796,7 @@ static VALUE nm_xslice(int argc, VALUE* argv, void* (*slice_func)(const STORAGE*
 //////////////////////
 
 static VALUE unary_op(nm::unaryop_t op, VALUE self) {
+  NM_VOLATILE(self);
   NMATRIX* left;
   UnwrapNMatrix(self, left);
   std::string sym;
@@ -1799,7 +1828,8 @@ static void check_dims_and_shape(VALUE left_val, VALUE right_val) {
 }
 
 static VALUE elementwise_op(nm::ewop_t op, VALUE left_val, VALUE right_val) {
-
+  NM_VOLATILE(left_val);
+  NM_VOLATILE(right_val);
 	NMATRIX* left;
 	NMATRIX* result;
 
@@ -1858,6 +1888,8 @@ static VALUE elementwise_op(nm::ewop_t op, VALUE left_val, VALUE right_val) {
 }
 
 static VALUE noncom_elementwise_op(nm::noncom_ewop_t op, VALUE self, VALUE other, VALUE flip) {
+  NM_VOLATILE(self);
+  NM_VOLATILE(other);
 
   NMATRIX* self_nm;
   NMATRIX* result;
@@ -1927,6 +1959,7 @@ bool is_ref(const NMATRIX* matrix) {
  * Helper function for nm_symmetric and nm_hermitian.
  */
 static VALUE is_symmetric(VALUE self, bool hermitian) {
+  NM_VOLATILE(self);
   NMATRIX* m;
   UnwrapNMatrix(self, m);
 
@@ -1987,6 +2020,7 @@ nm::dtype_t nm_dtype_min_fixnum(int64_t v) {
  * Helper for nm_dtype_min(), handling rationals.
  */
 nm::dtype_t nm_dtype_min_rational(VALUE vv) {
+  NM_VOLATILE(vv);
   nm::Rational128* v = NM_ALLOCA_N(nm::Rational128, 1);
   rubyval_to_cval(vv, nm::RATIONAL128, v);
 
@@ -2111,6 +2145,7 @@ nm::dtype_t nm_dtype_guess(VALUE v) {
  * accessing some part of a matrix.
  */
 static SLICE* get_slice(size_t dim, int argc, VALUE* arg, size_t* shape) {
+  NM_VOLATILE_P(arg);
   VALUE beg, end;
   int excl;
 
@@ -2141,7 +2176,7 @@ static SLICE* get_slice(size_t dim, int argc, VALUE* arg, size_t* shape) {
       t++;
 
     } else if (TYPE(arg[t]) == T_HASH) { // 3:5 notation (inclusive)
-      VALUE begin_end   = rb_funcall(v, rb_intern("shift"), 0); // rb_hash_shift
+      volatile VALUE begin_end   = rb_funcall(v, rb_intern("shift"), 0); // rb_hash_shift
       slice->coords[r]  = FIX2UINT(rb_ary_entry(begin_end, 0));
       slice->lengths[r] = FIX2UINT(rb_ary_entry(begin_end, 1)) - slice->coords[r];
 
@@ -2190,6 +2225,7 @@ static double get_time(void) {
  * dtype.
  */
 static nm::dtype_t interpret_dtype(int argc, VALUE* argv, nm::stype_t stype) {
+  NM_VOLATILE_P(argv);
   int offset;
 
   switch (argc) {
@@ -2224,6 +2260,7 @@ static nm::dtype_t interpret_dtype(int argc, VALUE* argv, nm::stype_t stype) {
  * Convert an Ruby value or an array of Ruby values into initial C values.
  */
 static void* interpret_initial_value(VALUE arg, nm::dtype_t dtype) {
+  NM_VOLATILE(arg);
   unsigned int index;
   void* init_val;
 
@@ -2250,6 +2287,7 @@ static void* interpret_initial_value(VALUE arg, nm::dtype_t dtype) {
  * array describing the shape, which must be freed manually.
  */
 static size_t* interpret_shape(VALUE arg, size_t* dim) {
+  NM_VOLATILE(arg);
   size_t* shape;
 
   if (TYPE(arg) == T_ARRAY) {
@@ -2302,10 +2340,14 @@ STORAGE* matrix_storage_cast_alloc(NMATRIX* matrix, nm::dtype_t new_dtype) {
 }
 
 STORAGE_PAIR binary_storage_cast_alloc(NMATRIX* left_matrix, NMATRIX* right_matrix) {
+  NM_VOLATILE_NMATRIX(left_matrix);
+  NM_VOLATILE_NMATRIX(right_matrix);
   STORAGE_PAIR casted;
   nm::dtype_t new_dtype = Upcast[left_matrix->storage->dtype][right_matrix->storage->dtype];
 
   casted.left  = matrix_storage_cast_alloc(left_matrix, new_dtype);
+  STORAGE* cl = casted.left;
+  NM_VOLATILE_STORAGE(left_matrix->stype, cl);
   casted.right = matrix_storage_cast_alloc(right_matrix, new_dtype);
 
   return casted;
@@ -2321,6 +2363,10 @@ static VALUE matrix_multiply(NMATRIX* left, NMATRIX* right) {
 
   // Make sure both of our matrices are of the correct type.
   STORAGE_PAIR casted = binary_storage_cast_alloc(left, right);
+  STORAGE* cl = casted.left;
+  STORAGE* cr = casted.right;
+  NM_VOLATILE_STORAGE(left->stype, cl);
+  NM_VOLATILE_STORAGE(right->stype, cr);
 
   size_t*  resulting_shape   = NM_ALLOC_N(size_t, 2);
   resulting_shape[0] = left->storage->shape[0];
@@ -2338,6 +2384,7 @@ static VALUE matrix_multiply(NMATRIX* left, NMATRIX* right) {
 
   STORAGE* resulting_storage = storage_matrix_multiply[left->stype](casted, resulting_shape, vector);
   NMATRIX* result = nm_create(left->stype, resulting_storage);
+  NM_VOLATILE_NMATRIX(result);
 
   // Free any casted-storage we created for the multiplication.
   // TODO: Can we make the Ruby GC take care of this stuff now that we're using it?
@@ -2364,16 +2411,16 @@ static VALUE matrix_multiply(NMATRIX* left, NMATRIX* right) {
  * Note: Currently only implemented for 2x2 and 3x3 matrices.
  */
 static VALUE nm_det_exact(VALUE self) {
-  volatile VALUE vself = self;
-  if (NM_STYPE(vself) != nm::DENSE_STORE) rb_raise(nm_eStorageTypeError, "can only calculate exact determinant for dense matrices");
+  NM_VOLATILE(self);
+  if (NM_STYPE(self) != nm::DENSE_STORE) rb_raise(nm_eStorageTypeError, "can only calculate exact determinant for dense matrices");
 
-  if (NM_DIM(vself) != 2 || NM_SHAPE0(vself) != NM_SHAPE1(vself)) return Qnil;
+  if (NM_DIM(self) != 2 || NM_SHAPE0(self) != NM_SHAPE1(self)) return Qnil;
 
   // Calculate the determinant and then assign it to the return value
-  void* result = NM_ALLOCA_N(char, DTYPE_SIZES[NM_DTYPE(vself)]);
-  nm_math_det_exact(NM_SHAPE0(vself), NM_STORAGE_DENSE(vself)->elements, NM_SHAPE0(vself), NM_DTYPE(vself), result);
+  void* result = NM_ALLOCA_N(char, DTYPE_SIZES[NM_DTYPE(self)]);
+  nm_math_det_exact(NM_SHAPE0(self), NM_STORAGE_DENSE(self)->elements, NM_SHAPE0(self), NM_DTYPE(self), result);
 
-  return rubyobj_from_cval(result, NM_DTYPE(vself)).rval;
+  return rubyobj_from_cval(result, NM_DTYPE(self)).rval;
 }
 
 /////////////////
@@ -2392,6 +2439,7 @@ static VALUE nm_det_exact(VALUE self) {
  * TODO: Add a column-major option for libraries that use column-major matrices.
  */
 VALUE rb_nmatrix_dense_create(nm::dtype_t dtype, size_t* shape, size_t dim, void* elements, size_t length) {
+  NM_VOLATILE_ELEM(elements, dtype);
   NMATRIX* nm;
   size_t nm_dim;
   size_t* shape_copy;
@@ -2412,6 +2460,8 @@ VALUE rb_nmatrix_dense_create(nm::dtype_t dtype, size_t* shape, size_t dim, void
   // Copy elements
   void* elements_copy = NM_ALLOC_N(char, DTYPE_SIZES[dtype]*length);
   memcpy(elements_copy, elements, DTYPE_SIZES[dtype]*length);
+  NM_VOLATILE_ELEM(elements_copy, dtype);
+
 
   // allocate and create the matrix and its storage
   nm = nm_create(nm::DENSE_STORE, nm_dense_storage_create(dtype, shape_copy, dim, elements_copy, length));

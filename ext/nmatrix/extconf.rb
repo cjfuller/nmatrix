@@ -109,7 +109,7 @@ $CPPFLAGS = ["-Wall -Werror=return-type",$CPPFLAGS].join(" ")
 $srcs = [
          'nmatrix.cpp',
          'ruby_constants.cpp',
-
+         'nm_memory.cpp',
          'data/data.cpp',
          'math.cpp',
          'util/sl_list.cpp',
@@ -185,7 +185,7 @@ have_func("cblas_dgemm", "cblas.h")
 $libs += " -llapack -lcblas -latlas "
 #$libs += " -lprofiler "
 
-$objs = %w{nmatrix ruby_constants data/data util/io math util/sl_list storage/common storage/storage storage/dense storage/yale/yale storage/list}.map { |i| i + ".o" }
+$objs = %w{nmatrix nm_memory ruby_constants data/data util/io math util/sl_list storage/common storage/storage storage/dense storage/yale/yale storage/list}.map { |i| i + ".o" }
 
 #CONFIG['CXX'] = 'clang++'
 CONFIG['CXX'] = 'g++'
