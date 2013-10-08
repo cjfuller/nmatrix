@@ -95,18 +95,22 @@ volatile VALUE no_op(volatile VALUE in);
 // this could problematically optimized out otherwise?
 #define NM_VOLATILE_P(var) volatile VALUE* volatile __nm_vol_##var = var; no_op(NM_VOL_VARNAME(var))
 
-#define NM_VOLATILE_DENSE_ELEM(d_storage) volatile VALUE* volatile NM_VOL_VARNAME(d_storage) = reinterpret_cast<VALUE*>(((DENSE_STORAGE*) d_storage)->elements); no_op(NM_VOL_VARNAME(var))
-
-#define NM_VOLATILE_YALE_ELEM(y_storage)//TODO
-
-#define NM_VOLATILE_LIST_ELEM(l_storage)//TODO
-
 #define NM_VOLATILE_ELEM(elem, dtype) \
   volatile VALUE* volatile NM_VOL_VARNAME(elem) = NULL; \
   if (dtype == nm::RUBYOBJ) { \
     NM_VOL_VARNAME(elem) = reinterpret_cast<VALUE*>(elem); \
   } \
   no_op(NM_VOL_VARNAME(elem))
+
+#define NM_VOLATILE_DENSE_ELEM(d_storage) \
+  void* __elems_temp_##d_storage = d_storage->elements; \
+  NM_VOLATILE_ELEM(__elems_temp_##d_storage, d_storage->dtype)
+
+#define NM_VOLATILE_YALE_ELEM(y_storage)//TODO
+
+#define NM_VOLATILE_LIST_ELEM(l_storage)//TODO
+
+
 
 // FIXME: does the pointer actually need to be volatile or just the VALUE it's pointing to?
 //TODO: list and yale
